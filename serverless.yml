@@ -1,0 +1,164 @@
+service: serverless-test
+frameworkVersion: "2"
+
+provider:
+  name: aws
+  runtime: nodejs16.x
+  deploymentMethod: direct
+  lambdaHashingVersion: 20201221
+  environment:
+    STAGE: ${opt:stage}
+
+custom:
+  stackName: ${self:service}-${opt:stage}
+
+# you can add packaging information here
+package:
+  individually: true
+  patterns:
+    - "!node_modules/**"
+    - "*.json"
+    - "*.yml"
+
+functions:
+  getPatientInfo:
+    handler: functions/test.handler
+    events:
+      - http:
+          path: care/patient-info
+          method: get
+          cors: true
+          authorizer:
+            type: COGNITO_USER_POOLS
+            scopes: # Optional
+              - aws.cognito.signin.user.admin
+            authorizerId:
+              Ref: ApiGatewayAuthorizer
+      - http:
+          path: circle/patient-info
+          method: get
+          cors: true
+          authorizer:
+            type: COGNITO_USER_POOLS
+            scopes: # Optional
+              - aws.cognito.signin.user.admin
+            authorizerId:
+              Ref: ApiGatewayAuthorizerV2
+
+resources:
+  Resources:
+    CognitoUserPool:
+      Type: AWS::Cognito::UserPool
+      Properties:
+        UserPoolName: !Join ["-", ["CognitoUserPool", { Ref: AWS::StackName }]]
+        AutoVerifiedAttributes:
+          - email
+        Policies:
+          PasswordPolicy:
+            MinimumLength: 8
+            RequireLowercase: true
+            RequireNumbers: true
+            RequireUppercase: true
+            RequireSymbols: false
+        UsernameAttributes:
+          - email
+        MfaConfiguration: "OFF"
+        Schema:
+          - AttributeDataType: String
+            Name: email
+            Required: false
+            Mutable: true
+          - AttributeDataType: String
+            Name: name
+            Required: false
+            Mutable: true
+
+    WebClient:
+      Type: AWS::Cognito::UserPoolClient
+      Properties:
+        UserPoolId: !Ref CognitoUserPool
+        ClientName: app-client
+        ExplicitAuthFlows:
+          - ALLOW_ADMIN_USER_PASSWORD_AUTH
+          - ALLOW_CUSTOM_AUTH
+          - ALLOW_USER_PASSWORD_AUTH
+          - ALLOW_USER_SRP_AUTH
+          - ALLOW_REFRESH_TOKEN_AUTH
+        PreventUserExistenceErrors: LEGACY
+        SupportedIdentityProviders:
+          - COGNITO
+
+    CognitoDomain:
+      Type: AWS::Cognito::UserPoolDomain
+      Properties:
+        Domain: "serverless-v1-${opt:stage}"
+        UserPoolId: !Ref CognitoUserPool
+
+    ApiGatewayAuthorizer:
+      Type: AWS::ApiGateway::Authorizer
+      Properties:
+        Name: TestV1ApiAuthorizer
+        RestApiId:
+          Ref: ApiGatewayRestApi
+        Type: COGNITO_USER_POOLS
+        ProviderARNs:
+          - Fn::GetAtt: [CognitoUserPool, Arn]
+        IdentitySource: method.request.header.Authorization
+
+    CognitoUserPoolV2:
+      Type: AWS::Cognito::UserPool
+      Properties:
+        UserPoolName: !Join ["-", ["CognitoUserPoolV2", { Ref: AWS::StackName }]]
+        AutoVerifiedAttributes:
+          - email
+        Policies:
+          PasswordPolicy:
+            MinimumLength: 8
+            RequireLowercase: true
+            RequireNumbers: true
+            RequireUppercase: true
+            RequireSymbols: false
+        UsernameAttributes:
+          - email
+        MfaConfiguration: "OFF"
+        Schema:
+          - AttributeDataType: String
+            Name: email
+            Required: false
+            Mutable: true
+          - AttributeDataType: String
+            Name: name
+            Required: false
+            Mutable: true
+
+    WebClientV2:
+      Type: AWS::Cognito::UserPoolClient
+      Properties:
+        UserPoolId: !Ref CognitoUserPoolV2
+        ClientName: app-client
+        ExplicitAuthFlows:
+          - ALLOW_ADMIN_USER_PASSWORD_AUTH
+          - ALLOW_CUSTOM_AUTH
+          - ALLOW_USER_PASSWORD_AUTH
+          - ALLOW_USER_SRP_AUTH
+          - ALLOW_REFRESH_TOKEN_AUTH
+        PreventUserExistenceErrors: LEGACY
+        SupportedIdentityProviders:
+          - COGNITO
+
+    CognitoDomainV2:
+      Type: AWS::Cognito::UserPoolDomain
+      Properties:
+        Domain: "serverless-v2-${opt:stage}"
+        UserPoolId: !Ref CognitoUserPoolV2
+
+    ApiGatewayAuthorizerV2:
+      Type: AWS::ApiGateway::Authorizer
+      Properties:
+        Name: TestV2ApiAuthorizer
+        RestApiId:
+          Ref: ApiGatewayRestApi
+        Type: COGNITO_USER_POOLS
+        ProviderARNs:
+          - Fn::GetAtt: [CognitoUserPoolV2, Arn]
+        IdentitySource: method.request.header.Authorization
